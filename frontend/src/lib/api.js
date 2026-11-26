@@ -5,12 +5,15 @@ const api = axios.create({
   timeout: 15000,
 })
 
-export const getStats = () => api.get('/admin/stats').then((r) => r.data)
-export const getBookings = () => api.get('/admin/bookings').then((r) => r.data)
-export const getChats = () => api.get('/admin/chats').then((r) => r.data)
-export const getUsers = () => api.get('/admin/users').then((r) => r.data)
-export const getProperties = () => api.get('/admin/properties').then((r) => r.data)
-export const getTransactions = () => api.get('/mpesa/transactions').then((r) => r.data)
-export const sendChat = (payload) => api.post('/chat/message', payload).then((r) => r.data)
+const adminToken = import.meta.env.VITE_ADMIN_API_TOKEN
+if (adminToken) api.defaults.headers.common['X-Admin-Token'] = adminToken
+
+export const getHealth = () => api.get('/health').then((response) => response.data)
+export const getStats = () => api.get('/admin/stats').then((response) => response.data)
+export const getBookings = () => api.get('/admin/bookings').then((response) => response.data)
+export const getChats = () => api.get('/admin/chats').then((response) => response.data)
+export const getTransactions = () => api.get('/mpesa/transactions').then((response) => response.data)
+export const sendAdminReply = (userId, message) =>
+  api.post(`/admin/chats/${userId}/reply`, { message }).then((response) => response.data)
 
 export default api

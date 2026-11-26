@@ -1,184 +1,168 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { MessageCircleMore, Send, Sparkles } from 'lucide-react'
-import { getChats, sendChat } from '../lib/api'
-import { Badge, Card, ErrorState, LoadingState, PageHeader, timeAgo } from '../components/ui'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getChats, sendAdminReply } from '../lib/api'
+import { formatRelative, initials } from '../lib/format'
+import { useI18n } from '../lib/i18nCore'
+import { useApiResource } from '../lib/resource'
+import { Badge, Card, EmptyState, ErrorState, LoadingState, PageHeader } from '../components/ui'
+
+const loadChats = () => getChats()
 
 export default function Chats() {
-  const [chats, setChats] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { t, locale } = useI18n()
+  const { data, status, error, refresh } = useApiResource('chats', loadChats)
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-
-  const load = useCallback(async () => {
-    try {
-      const rows = await getChats()
-      setChats(rows)
-      setError('')
-    } catch (err) {
-      setError(err.message || 'Could not load conversations')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const [sendError, setSendError] = useState('')
+  const bottomRef = useRef(null)
 
   useEffect(() => {
-    load()
-    const timer = setInterval(load, 5000)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh()
+    }, 15000)
     return () => clearInterval(timer)
-  }, [load])
+  }, [refresh])
 
   const conversations = useMemo(() => {
     const groups = new Map()
-    chats.forEach((chat) => {
-      const key = chat.user_id
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
+    for (const chat of data || []) {
+      if (!groups.has(chat.user_id)) {
+        groups.set(chat.user_id, {
+          key: chat.user_id,
           name: chat.guest_name,
-          phone_number: chat.phone_number,
+          phoneNumber: chat.phone_number,
           platform: chat.platform,
           messages: [],
           last: chat.created_at,
         })
       }
-      const group = groups.get(key)
+      const group = groups.get(chat.user_id)
       group.messages.push(chat)
       if (new Date(chat.created_at) > new Date(group.last)) group.last = chat.created_at
-    })
+    }
     return [...groups.values()]
-      .map((group) => ({ ...group, messages: group.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) }))
+      .map((group) => ({
+        ...group,
+        messages: group.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+      }))
       .sort((a, b) => new Date(b.last) - new Date(a.last))
-  }, [chats])
+  }, [data])
 
   const active = conversations.find((item) => item.key === selectedId) || conversations[0]
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [active?.key, active?.messages.length])
+
   const handleSend = async (event) => {
     event.preventDefault()
-    if (!draft.trim() || !active || sending) return
+    const message = draft.trim()
+    if (!message || !active || sending) return
     setSending(true)
+    setSendError('')
     try {
-      await sendChat({
-        phone_number: active.phone_number,
-        platform: active.platform,
-        message: draft.trim(),
-        name: active.name,
-      })
+      await sendAdminReply(active.key, message)
       setDraft('')
-      await load()
+      await refresh()
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Could not send message')
+      setSendError(err.response?.data?.detail || err.message || t('chats.sendFailed'))
     } finally {
       setSending(false)
     }
   }
 
-  if (error && !chats.length) return <ErrorState message={error} onRetry={load} />
-  if (loading) return <LoadingState label="Loading conversations..." />
+  if (status === 'error') return <ErrorState message={error} onRetry={refresh} retryLabel={t('common.retry')} />
+  if (!data || status === 'loading') return <LoadingState label={t('common.loading')} />
 
   return (
     <>
       <PageHeader
-        eyebrow="Inbox"
-        title="Live chats"
-        description="Conversations routed from WhatsApp, Instagram DMs and SMS into one AI-assisted inbox."
+        title={t('chats.title')}
+        description={`${t('chats.description')} ${t('chats.refreshHint')}`}
         action={
-          <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2 text-sm text-slate-400">
-            <span className="size-2 animate-pulse rounded-full bg-emerald-400" />
-            Auto-refresh 5s
-          </div>
+          <button type="button" className="app-button app-button-secondary" onClick={refresh}>
+            {t('common.refresh')}
+          </button>
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
-        <Card className="p-0">
-          <div className="border-b border-slate-800/80 px-4 py-3">
-            <p className="text-sm font-semibold text-white">Conversations</p>
-            <p className="text-xs text-slate-500">{conversations.length} travelers</p>
+      {sendError && <p className="app-alert" role="alert">{sendError}</p>}
+
+      <div className="app-chat-layout">
+        <Card className="app-card-flush app-chat-list">
+          <div className="app-chat-list-heading">
+            <h2>{t('chats.list')}</h2>
+            <small>{conversations.length} {t('chats.travelers')}</small>
           </div>
-          <div className="max-h-[650px] overflow-y-auto">
-            {conversations.map((conversation) => (
-              <button
-                key={conversation.key}
-                onClick={() => setSelectedId(conversation.key)}
-                className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${
-                  active?.key === conversation.key ? 'bg-emerald-500/10' : 'hover:bg-slate-800/40'
-                }`}
-              >
-                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-800 text-xs font-semibold text-emerald-300">
-                  {conversation.name?.slice(0, 2).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-white">{conversation.name}</span>
-                    <span className="shrink-0 text-[10px] text-slate-500">{timeAgo(conversation.last)}</span>
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-slate-500">
-                    {conversation.messages.at(-1)?.content}
-                  </span>
-                  <span className="mt-1.5 block text-[10px] uppercase tracking-wide text-slate-600">{conversation.platform}</span>
-                </span>
-              </button>
-            ))}
-          </div>
+          {conversations.length ? (
+            <ul className="app-conversation-list">
+              {conversations.map((conversation) => (
+                <li key={conversation.key}>
+                  <button
+                    type="button"
+                    aria-current={active?.key === conversation.key ? 'true' : undefined}
+                    onClick={() => setSelectedId(conversation.key)}
+                  >
+                    <span className="app-avatar" aria-hidden="true">{initials(conversation.name)}</span>
+                    <span className="app-conversation-copy">
+                      <span className="app-conversation-top">
+                        <strong>{conversation.name}</strong>
+                        <time dateTime={conversation.last}>{formatRelative(conversation.last, locale)}</time>
+                      </span>
+                      <span className="app-conversation-preview">{conversation.messages.at(-1)?.content}</span>
+                      <small>{conversation.platform}</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState message={t('chats.empty')} />
+          )}
         </Card>
 
-        <Card className="flex min-h-[560px] flex-col p-0">
+        <Card className="app-card-flush app-chat-thread">
           {active ? (
             <>
-              <div className="flex items-center gap-3 border-b border-slate-800/80 px-5 py-4">
-                <span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-bold text-slate-950">
-                  {active.name?.slice(0, 2).toUpperCase()}
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">{active.name}</p>
-                  <p className="text-xs text-slate-500">{active.phone_number} · {active.platform}</p>
+              <div className="app-chat-heading">
+                <span className="app-avatar app-avatar-large" aria-hidden="true">{initials(active.name)}</span>
+                <div>
+                  <strong>{active.name}</strong>
+                  <small>{active.phoneNumber} · {active.platform}</small>
                 </div>
-                <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                  <Sparkles className="size-3.5" /> AI concierge active
-                </span>
+                <span className="app-thread-label">{t('chats.agent')}</span>
               </div>
 
-              <div className="flex-1 space-y-4 overflow-y-auto bg-slate-950/30 px-5 py-6">
+              <div className="app-messages" role="log" aria-live="polite" aria-relevant="additions text">
                 {active.messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${message.direction === 'out' ? 'rounded-br-sm bg-emerald-500/15 text-emerald-50 ring-1 ring-emerald-500/25' : 'rounded-bl-sm bg-slate-800/80 text-slate-200'}`}>
-                      <p className="leading-relaxed">{message.content}</p>
-                      <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-500">
-                        <Badge value={message.direction} />
-                        {message.intent && <span>{message.intent}</span>}
-                        <span>{timeAgo(message.created_at)}</span>
-                      </div>
-                    </div>
-                  </div>
+                  <article key={message.id} className={`app-message${message.direction === 'out' ? ' is-out' : ''}`}>
+                    <p>{message.content}</p>
+                    <footer>
+                      <Badge value={message.direction} label={t(`common.${message.direction}`)} />
+                      {message.intent && <span>{message.intent}</span>}
+                      <time dateTime={message.created_at}>{formatRelative(message.created_at, locale)}</time>
+                    </footer>
+                  </article>
                 ))}
+                <div ref={bottomRef} />
               </div>
 
-              <form onSubmit={handleSend} className="flex items-center gap-3 border-t border-slate-800/80 px-5 py-4">
-                <MessageCircleMore className="size-5 shrink-0 text-slate-500" />
+              <form className="app-chat-form" onSubmit={handleSend}>
+                <label className="app-sr-only" htmlFor="reply-message">{t('chats.replyPlaceholder')}</label>
                 <input
+                  id="reply-message"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Reply as the AI concierge..."
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
+                  placeholder={t('chats.replyPlaceholder')}
+                  maxLength={2000}
                 />
-                <button
-                  type="submit"
-                  disabled={sending || !draft.trim()}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Send className="size-4" /> {sending ? 'Sending' : 'Send'}
+                <button type="submit" className="app-button" disabled={sending || !draft.trim()}>
+                  {sending ? t('chats.sending') : t('chats.send')}
                 </button>
               </form>
             </>
           ) : (
-            <div className="grid flex-1 place-items-center text-sm text-slate-500">
-              <div className="text-center">
-                <MessageCircleMore className="mx-auto mb-3 size-10 text-slate-700" />
-                No conversations yet. Send a message from WhatsApp or Instagram.
-              </div>
-            </div>
+            <EmptyState message={t('chats.empty')} />
           )}
         </Card>
       </div>

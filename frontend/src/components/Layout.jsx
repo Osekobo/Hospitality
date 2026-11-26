@@ -1,104 +1,125 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import {
-  CalendarCheck2,
-  LayoutDashboard,
-  Menu,
-  MessageCircleMore,
-  RadioTower,
-  ReceiptText,
-  Sparkles,
-  X,
-} from 'lucide-react'
+import { CalendarCheck2, LayoutDashboard, Menu, MessageSquare, ReceiptText, X } from 'lucide-react'
+import { getHealth } from '../lib/api'
+import { useI18n } from '../lib/i18nCore'
+import { useApiResource } from '../lib/resource'
 
 const navigation = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/bookings', label: 'Bookings', icon: CalendarCheck2 },
-  { to: '/chats', label: 'Live Chats', icon: MessageCircleMore },
-  { to: '/transactions', label: 'Payments', icon: ReceiptText },
+  { to: '/', key: 'nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/bookings', key: 'nav.bookings', icon: CalendarCheck2 },
+  { to: '/chats', key: 'nav.chats', icon: MessageSquare },
+  { to: '/transactions', key: 'nav.payments', icon: ReceiptText },
 ]
+
+function Sidebar({ onNavigate }) {
+  const { t } = useI18n()
+
+  return (
+    <div className="app-sidebar-inner">
+      <div className="app-brand">
+        <span className="app-brand-mark" aria-hidden="true">SC</span>
+        <span>
+          <strong>{t('app.name')}</strong>
+          <small>{t('app.subtitle')}</small>
+        </span>
+      </div>
+      <nav className="app-nav" aria-label={t('app.name')}>
+        {navigation.map(({ to, key, icon: Icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            onClick={onNavigate}
+            className={({ isActive }) => `app-nav-link${isActive ? ' is-active' : ''}`}
+          >
+            <Icon size={18} aria-hidden="true" />
+            <span>{t(key)}</span>
+          </NavLink>
+        ))}
+      </nav>
+      <div className="app-sidebar-footer">
+        <span>{t('common.region')}</span>
+      </div>
+    </div>
+  )
+}
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
+  const { setLocale, t } = useI18n()
+  const { data: healthData, status: healthStatus, refresh } = useApiResource('health', getHealth)
+
+  useEffect(() => {
+    const timer = setInterval(() => refresh(), 30000)
+    return () => clearInterval(timer)
+  }, [refresh])
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const apiState = healthStatus === 'success' && healthData?.status === 'ok' ? t('api.online') : healthStatus === 'error' ? t('api.offline') : t('api.checking')
 
   return (
-    <div className="min-h-screen bg-[#080d18]">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_-10%,rgba(16,185,129,0.12),transparent_35%),radial-gradient(circle_at_85%_10%,rgba(139,92,246,0.10),transparent_30%)]" />
+    <div className="app-shell">
+      <a className="app-skip-link" href="#main">{t('common.skip')}</a>
 
-      <div className="relative flex min-h-screen">
-        <aside
-          className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-800/80 bg-[#0b1120]/95 p-5 backdrop-blur transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950">
-                <Sparkles className="size-5" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-white">Social Concierge</p>
-                <p className="text-xs text-slate-500">Hospitality & Tourism</p>
-              </div>
-            </div>
-            <button onClick={() => setOpen(false)} className="text-slate-400 lg:hidden" aria-label="Close menu">
-              <X className="size-5" />
+      <aside className="app-sidebar app-sidebar-desktop">
+        <Sidebar />
+      </aside>
+
+      {open && (
+        <>
+          <button className="app-overlay" type="button" aria-label={t('nav.overview')} onClick={() => setOpen(false)} />
+          <aside className="app-sidebar app-sidebar-mobile" id="mobile-sidebar">
+            <button className="app-icon-button app-sidebar-close" type="button" onClick={() => setOpen(false)} aria-label={t('common.closeMenu')}>
+              <X size={20} aria-hidden="true" />
             </button>
+            <Sidebar onNavigate={() => setOpen(false)} />
+          </aside>
+        </>
+      )}
+
+      <div className="app-content-wrap">
+        <header className="app-header">
+          <div className="app-header-left">
+            <button
+              className="app-icon-button app-menu-button"
+              type="button"
+              aria-label={t('common.openMenu')}
+              aria-expanded={open}
+              aria-controls="mobile-sidebar"
+              onClick={() => setOpen(true)}
+            >
+              <Menu size={22} aria-hidden="true" />
+            </button>
+            <div>
+              <strong>{t('app.subtitle')}</strong>
+              <small>{t('common.region')}</small>
+            </div>
           </div>
-
-          <nav className="mt-10 space-y-1">
-            {navigation.map(({ to, label, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                    isActive
-                      ? 'bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20'
-                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
-                  }`
-                }
-              >
-                <Icon className="size-4" />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="mt-auto rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
-              <RadioTower className="size-4" />
-              Connected channels
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-slate-400">
-              WhatsApp · Instagram · SMS · USSD · Voice · M-Pesa
-            </p>
+          <div className="app-header-actions">
+            <span className={`app-api-status${apiState === t('api.online') ? ' is-online' : ''}`} role="status">
+              {t('api.status')}: {apiState}
+            </span>
+            <label className="app-locale-label">
+              <span className="app-sr-only">{t('common.language')}</span>
+              <select value={locale} onChange={(event) => setLocale(event.target.value)}>
+                <option value="en">EN</option>
+                <option value="sw">SW</option>
+              </select>
+            </label>
           </div>
-        </aside>
+        </header>
 
-        {open && <button className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setOpen(false)} aria-label="Close sidebar" />}
-
-        <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-          <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-800/70 bg-[#080d18]/85 px-5 py-4 backdrop-blur sm:px-8">
-            <div className="flex items-center gap-3">
-              <button onClick={() => setOpen(true)} className="text-slate-300 lg:hidden" aria-label="Open menu">
-                <Menu className="size-6" />
-              </button>
-              <div>
-                <p className="text-sm font-medium text-white">Operations dashboard</p>
-                <p className="text-xs text-slate-500">Nairobi, Kenya · East Africa Time</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300">
-              <span className="size-2 animate-pulse rounded-full bg-emerald-400" />
-              Live
-            </div>
-          </header>
-
-          <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-8 sm:px-8">
-            <Outlet />
-          </main>
-        </div>
+        <main className="app-main" id="main" tabIndex={-1}>
+          <Outlet />
+        </main>
       </div>
     </div>
   )

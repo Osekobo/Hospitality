@@ -1,16 +1,34 @@
-# React + Vite
+# Admin dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Vite admin interface for the Social-First AI Concierge API.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
 
-## React Compiler
+Configuration:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `VITE_API_URL`: backend origin, normally `http://localhost:8000`.
+- `VITE_ADMIN_API_TOKEN`: optional admin token sent as `X-Admin-Token` when the backend requires it.
+- `VITE_DEFAULT_LOCALE`: `en` or `sw`.
 
-## Expanding the Oxlint configuration
+## Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- Operations overview with payment, booking, guest and conversion metrics.
+- Accessible booking filters and payment tables.
+- Guest conversation list with polling and agent replies.
+- English/Kiswahili language switcher and Kenya-specific formatting.
+- API health status, loading/error states, keyboard navigation and mobile layout.
+
+## Commands
+
+```bash
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```
