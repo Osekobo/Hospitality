@@ -1,4 +1,5 @@
 import base64
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -8,6 +9,7 @@ from config import get_settings
 from services.phone import normalize_phone
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def eat_timestamp() -> str:
@@ -44,7 +46,7 @@ class MpesaService:
     async def stk_push(
         self, phone_number: str, amount: float, account_reference: str, transaction_desc: str = "Booking deposit"
     ) -> dict[str, Any]:
-        phone = normalize_phone(phone_number)
+        phone = normalize_phone(phone_number, style="msisdn")
         amount = float(round(amount))
 
         if not self.configured:
@@ -84,6 +86,8 @@ class MpesaService:
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json=payload,
             )
+            if response.status_code >= 400:
+                logger.error("M-Pesa STK failed with HTTP %s: %s", response.status_code, response.text[:500])
             response.raise_for_status()
             return response.json()
 

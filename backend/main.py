@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from routers import admin, at_webhooks, chat, meta_webhooks, mpesa
 from routers.at_webhooks import guide_ussd
 from security import ensure_production_config, require_admin
 
+logging.basicConfig(level=logging.INFO)
 settings = get_settings()
 
 

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -15,6 +16,7 @@ from services.mpesa_service import mpesa_service
 from services.places_weather import current_weather, safety_note, search_places
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 SESSIONS: dict[str, list[dict[str, str]]] = {}
 
 SYSTEM_PROMPT = """You are The Social Concierge, a warm AI travel assistant for African hospitality and tourism.
@@ -239,6 +241,7 @@ async def process_message(
         property_obj = (match or properties[0]) if properties else None
         deposit = 0.0
         checkout_request_id = ""
+        payment_error = ""
         result.update(
             {
                 "check_in": (date.today() + timedelta(days=1)).isoformat(),
@@ -275,23 +278,28 @@ async def process_message(
             db.add(booking)
             db.flush()
 
-            payment = await mpesa_service.stk_push(
-                user.phone_number, deposit, f"BK{booking.id}", "Booking deposit"
-            )
-            checkout_request_id = str(payment.get("CheckoutRequestID", ""))
-            booking.mpesa_checkout_request_id = checkout_request_id
-            db.add(
-                Transaction(
-                    booking_id=booking.id,
-                    checkout_request_id=checkout_request_id,
-                    merchant_request_id=payment.get("MerchantRequestID"),
-                    amount=deposit,
-                    status="Pending",
-                    phone_number=user.phone_number,
-                    result_description=payment.get("ResponseDescription"),
+            try:
+                payment = await mpesa_service.stk_push(
+                    user.phone_number, deposit, f"BK{booking.id}", "Booking deposit"
                 )
-            )
-            db.commit()
+            except Exception as exc:
+                payment_error = str(exc)
+                logger.warning("M-Pesa STK push failed for booking %s: %s", booking.id, exc)
+            else:
+                checkout_request_id = str(payment.get("CheckoutRequestID", ""))
+                booking.mpesa_checkout_request_id = checkout_request_id
+                db.add(
+                    Transaction(
+                        booking_id=booking.id,
+                        checkout_request_id=checkout_request_id,
+                        merchant_request_id=payment.get("MerchantRequestID"),
+                        amount=deposit,
+                        status="Pending",
+                        phone_number=user.phone_number,
+                        result_description=payment.get("ResponseDescription"),
+                    )
+                )
+                db.commit()
 
             result.update(
                 {
@@ -303,6 +311,8 @@ async def process_message(
                     "deposit": deposit,
                 }
             )
+            if payment_error:
+                result["payment_error"] = payment_error
         else:
             deposit = 0.0
             property_name = "a stay"
@@ -314,6 +324,17 @@ async def process_message(
             reply = _swahili_reply(intent, result.get("property", "hoteli"), result["check_in"], result["check_out"], deposit, "")
         else:
             reply = _english_reply(intent, result.get("property", "a stay"), result["check_in"], result["check_out"], deposit, "")
+        if payment_error:
+            if language == "sw":
+                reply = (
+                    f"Nimehifadhi nafasi yako {result.get('property', 'hoteli')} kwa {result['check_in']} hadi {result['check_out']}, "
+                    "lakini arifa ya M-Pesa haikufanikiwa kwa sasa. Tafadhali jaribu tena."
+                )
+            else:
+                reply = (
+                    f"I saved your booking at {result.get('property', 'a stay')} for {result['check_in']} to {result['check_out']}, "
+                    "but the M-Pesa prompt could not be sent right now. Please try again."
+                )
     else:
         place_summary = ", ".join(p["name"] for p in places[:3]) or "Pinetree Boutique Hotel, Maasai Oasis Camp"
         weather_extra = f"{weather['description']}, {weather['temperature']}C. {safety_note(weather)}"

@@ -27,6 +27,7 @@ from sqlalchemy import create_engine, inspect, text
 
 import database
 from main import app
+from routers import meta_webhooks
 
 
 @pytest.fixture(scope="module")
@@ -151,7 +152,41 @@ def test_meta_and_ussd_webhooks(client) -> None:
     assert ussd.text.startswith("CON")
 
 
-def test_meta_signature_is_required(client) -> None:
+def test_ussd_booking_creates_pending_booking_and_mpesa_prompt(client) -> None:
+    phone = "254700000099"
+
+    def ussd(text: str):
+        return client.post(
+            "/webhooks/at/ussd",
+            data={"sessionId": "ussd-booking", "serviceCode": "*389#", "phoneNumber": phone, "text": text},
+        )
+
+    assert "Book a stay" in ussd("").text
+    assert ussd("2").text.startswith("CON Book a stay")
+    assert "check-in" in ussd("2*1").text.lower()
+    assert "check-out" in ussd("2*1*27062027").text.lower()
+    assert "guests" in ussd("2*1*27062027*29062027").text.lower()
+    assert "Deposit" in ussd("2*1*27062027*29062027*2").text
+    done = ussd("2*1*27062027*29062027*2*1")
+    assert done.status_code == 200
+    assert "M-Pesa prompt" in done.text
+    assert any(
+        booking["phone_number"] == "+254700000099" and booking["status"] == "Pending"
+        for booking in client.get("/admin/bookings").json()
+    )
+
+
+def test_ussd_alias_and_guide_portal(client) -> None:
+    data = {"sessionId": "s2", "serviceCode": "*389#", "phoneNumber": "254700000098", "text": ""}
+    customer = client.post("/ussd", data=data)
+    assert customer.text.startswith("CON Social Concierge")
+    assert "Book a stay" in customer.text
+    guide = client.post("/guide/ussd", data=data)
+    assert "Guide Portal" in guide.text
+
+
+def test_meta_signature_is_required(client, monkeypatch) -> None:
+    monkeypatch.setattr(meta_webhooks.settings, "environment", "production")
     response = client.post("/webhooks/meta", json={"object": "unknown"})
     assert response.status_code == 401
 
