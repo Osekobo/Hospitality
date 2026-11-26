@@ -47,7 +47,7 @@ function Sidebar({ onNavigate }) {
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
-  const { setLocale, t } = useI18n()
+  const { locale, setLocale, t } = useI18n()
   const { data: healthData, status: healthStatus, refresh } = useApiResource('health', getHealth)
 
   useEffect(() => {
