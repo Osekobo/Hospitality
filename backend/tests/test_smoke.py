@@ -23,7 +23,9 @@ os.environ["OPENWEATHER_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect, text
 
+import database
 from main import app
 
 
@@ -152,3 +154,45 @@ def test_meta_and_ussd_webhooks(client) -> None:
 def test_meta_signature_is_required(client) -> None:
     response = client.post("/webhooks/meta", json={"object": "unknown"})
     assert response.status_code == 401
+
+
+def test_migration_adds_missing_columns(tmp_path, monkeypatch) -> None:
+    legacy_engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY,
+                    phone_number VARCHAR(40),
+                    platform VARCHAR(10),
+                    display_name VARCHAR(120),
+                    preferred_language VARCHAR(5),
+                    created_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER,
+                    platform VARCHAR(10),
+                    direction VARCHAR(4),
+                    content TEXT,
+                    intent VARCHAR(40),
+                    created_at DATETIME
+                )
+                """
+            )
+        )
+
+    monkeypatch.setattr(database, "engine", legacy_engine)
+    database.migrate_db()
+
+    user_columns = {column["name"] for column in inspect(legacy_engine).get_columns("users")}
+    chat_columns = {column["name"] for column in inspect(legacy_engine).get_columns("chat_messages")}
+    assert "reward_granted" in user_columns
+    assert "external_id" in chat_columns

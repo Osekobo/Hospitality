@@ -50,7 +50,7 @@ Create the database in PostgreSQL, then start the API:
 uvicorn main:app --reload --port 8000
 ```
 
-Tables are created on startup with `Base.metadata.create_all`. When `DEMO_MODE=true`, sample users, properties, bookings, chats and M-Pesa transactions are seeded.
+Tables are created on startup with `Base.metadata.create_all`, then idempotent migrations add missing columns and safe unique indexes to existing databases. When `DEMO_MODE=true`, sample users, properties, bookings, chats and M-Pesa transactions are seeded.
 
 Interactive API docs are available at `http://localhost:8000/docs`.
 
